@@ -1,4 +1,4 @@
 [submodule "src/external_submodules/hptr"]
 	path = src/external_submodules/hptr
-	url = https://github.com/roydenwa/hptr.git
-	branch = importable
+	url = https://github.com/marlon31415/HPTR.git
+	branch = nuplan-interface
