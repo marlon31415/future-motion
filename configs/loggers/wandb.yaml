@@ -1,9 +1,9 @@
 wandb:
   _target_: pytorch_lightning.loggers.WandbLogger
-  project: debug
+  project: nuplan
   group: null
-  name: my_name
-  notes: my_notes
+  name: scene_motion_prediction
+  notes: "Train scene motion prediction model"
   tags: []
   job_type: train
-  entity: YOUR_ENTITY
+  entity: kit_mrt

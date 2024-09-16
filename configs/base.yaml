@@ -2,9 +2,9 @@
 
 defaults:
   - _self_
-  - trainer: womd
-  - model: scr_womd
-  - datamodule: h5_womd
+  - trainer: nuplan
+  - model: ac_scene_motion
+  - datamodule: h5_nuplan
   - callbacks: wandb
   - loggers: wandb
   - resume: empty
@@ -14,5 +14,5 @@ hydra:
     dir: logs/${now:%Y-%m-%d}/${now:%H-%M-%S}
 
 work_dir: ${hydra:runtime.cwd}
-seed: 2023
+seed: 2024
 action: fit # fit, validate, test
