@@ -1,9 +1,9 @@
-_target_: future_motion.FutureMotion 
+_target_: future_motion.FutureMotion
 
 time_step_current: 10
 time_step_end: 90
 n_video_batch: 3
-interactive_challenge: True
+interactive_challenge: False
 inference_cache_map: False
 inference_repeat_n: 1
 plot_motion: False
@@ -33,7 +33,7 @@ model:
     n_layer: 6
   motion_decoder:
     _target_: models.ac_wayformer.Decoder
-    n_decoder_layers: 8 
+    n_decoder_layers: 8
     n_pred: 6
     multi_modal_anchors:
       use_agent_type: False # Opt, test with as well
