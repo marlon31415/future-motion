@@ -1,0 +1,10 @@
+_target_: external_submodules.hptr.src.data_modules.data_h5_nuplan.DataH5nuplan
+
+data_dir: "/tmp/steiner/sqfs/mrtstorage/datasets_tmp/nuplan_hptr/nuplan_hptr"
+filename_train: training_mini
+filename_val: validation_mini
+filename_test: testing_mini
+n_agent: 64
+
+batch_size: 6
+num_workers: 32
