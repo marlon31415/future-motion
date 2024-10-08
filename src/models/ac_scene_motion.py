@@ -130,7 +130,7 @@ class SceneMotion(nn.Module):
         """
         for _ in range(inference_repeat_n):
             valid = target_valid if self.pl_aggr else target_valid.any(-1)  # [n_scene, n_target]
-            target_emb, target_valid, other_emb, other_valid, tl_emb, tl_valid, map_emb, map_valid = self.local_encoder(
+            target_emb, target_valid, other_emb, other_valid, tl_emb, tl_valid, map_emb, map_valid, route_emb, route_valid = self.local_encoder(
                 target_valid=target_valid,
                 target_attr=target_attr,
                 other_valid=other_valid,
@@ -139,10 +139,12 @@ class SceneMotion(nn.Module):
                 map_attr=map_attr,
                 tl_valid=tl_valid,
                 tl_attr=tl_attr,
+                route_valid=route_valid,
+                route_emb=route_emb,
             )
 
-            emb = torch.cat([target_emb, other_emb, tl_emb, map_emb], dim=1)
-            emb_invalid = ~torch.cat([target_valid, other_valid, tl_valid, map_valid], dim=1)
+            emb = torch.cat([target_emb, other_emb, tl_emb, map_emb, route_emb], dim=1)
+            emb_invalid = ~torch.cat([target_valid, other_valid, tl_valid, map_valid, route_valid], dim=1)
             
             red_emb = self.reduction_decoder(emb=emb, emb_invalid=emb_invalid, valid=valid)
 
