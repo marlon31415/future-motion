@@ -2,8 +2,8 @@ wandb:
   _target_: pytorch_lightning.loggers.WandbLogger
   project: nuplan
   group: null
-  name: scene_motion_prediction
-  notes: "Train scene motion prediction model"
+  name: scene-motion_jmpp
+  notes: "Local encoder for route information"
   tags: []
   job_type: train
   entity: kit_mrt

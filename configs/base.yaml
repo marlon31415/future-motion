@@ -4,7 +4,7 @@ defaults:
   - _self_
   - trainer: nuplan
   - model: ac_scene_motion
-  - datamodule: h5_nuplan
+  - datamodule: h5_nuplan_mini
   - callbacks: wandb
   - loggers: wandb
   - resume: empty
