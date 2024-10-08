@@ -16,3 +16,18 @@ hydra:
 work_dir: ${hydra:runtime.cwd}
 seed: 2024
 action: fit # fit, validate, test
+
+input_sizes:
+  n_target: 8
+  n_other: 48
+  n_agent: 64
+  n_step_hist: 11
+  n_pl_node: 20
+  n_tl: 24
+  n_map: 128
+  agent_attr_dim: 26
+  tl_attr_dim: 22
+  tl_state_dim: 4
+  map_attr_dim: 36
+  map_type_dim: 9
+  n_agent_type: 3

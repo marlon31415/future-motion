@@ -93,6 +93,8 @@ class SceneMotion(nn.Module):
         tl_attr: Tensor,
         map_valid: Tensor,
         map_attr: Tensor,
+        ref_pos: Tensor,
+        ref_rot: Tensor,
         inference_repeat_n: int = 1,
         inference_cache_map: bool = False,
         **kwargs,
@@ -146,8 +148,10 @@ class SceneMotion(nn.Module):
             
             red_emb = self.reduction_decoder(emb=emb, emb_invalid=emb_invalid, valid=valid)
 
-            ref_pos_emb = self.to_ref_pos_emb(kwargs["ref_pos"].flatten(0, 1).flatten(1, 2))
-            ref_rot_emb = self.to_ref_rot_emb(kwargs["ref_rot"].flatten(0, 1).flatten(1, 2))
+            # ref_pos_emb = self.to_ref_pos_emb(kwargs["ref_pos"].flatten(0, 1).flatten(1, 2))
+            ref_pos_emb = self.to_ref_pos_emb(ref_pos.flatten(0, 1).flatten(1, 2))
+            # ref_rot_emb = self.to_ref_rot_emb(kwargs["ref_rot"].flatten(0, 1).flatten(1, 2))
+            ref_rot_emb = self.to_ref_rot_emb(ref_rot.flatten(0, 1).flatten(1, 2))
             
             # Concat & rearrange to learn scene-wide context: n_batch = n_scene (not n_scene * n_agent)
             red_emb = torch.cat([red_emb, ref_pos_emb[:, None, :], ref_rot_emb[:, None, :]], dim=1)

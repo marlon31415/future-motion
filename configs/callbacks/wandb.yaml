@@ -13,3 +13,137 @@ lr_monitor:
 
 stochastic_weight_avg:
   _target_: pytorch_lightning.callbacks.stochastic_weight_avg.StochasticWeightAveraging
+
+torchscript_logger:
+  _target_: external_submodules.hptr.src.callbacks.wandb_callbacks.TorchScriptLogger
+  log_dir: "checkpoints/"
+  input_sample:
+    # target_valid: [n_scene, n_target, n_step_hist], bool
+    # target_attr: [n_scene, n_target, n_step_hist, agent_attr_dim]
+    # other_valid: [n_scene, n_target, n_other, n_step_hist], bool
+    # other_attr: [n_scene, n_target, n_other, n_step_hist, agent_attr_dim]
+    # tl_valid: [n_scene, n_target, n_step_hist, n_tl], bool
+    # tl_attr: [n_scene, n_target, n_step_hist, n_tl, tl_attr_dim]
+    # map_valid: [n_scene, n_target, n_map, n_pl_node], bool
+    # map_attr: [n_scene, n_target, n_map, n_pl_node, map_attr_dim]
+    # ref_pos: [n_scene, n_target, 1, 2]
+    # ref_rot = [n_scene, n_target, 2, 2]
+    input/target_valid:
+      _target_: external_submodules.hptr.src.callbacks.wandb_callbacks.TorchOnesBool #torch.full
+      size: [1, "${input_sizes.n_target}", "${input_sizes.n_step_hist}"]
+      # fill_value: False
+    input/target_type:
+      _target_: torch.zeros
+      _args_: [1, "${input_sizes.n_target}", "${input_sizes.n_agent_type}"]
+    input/target_attr:
+      _target_: torch.rand
+      _args_: [1, "${input_sizes.n_target}", "${input_sizes.n_step_hist}", "${input_sizes.agent_attr_dim}"]
+    input/other_valid:
+      _target_: external_submodules.hptr.src.callbacks.wandb_callbacks.TorchOnesBool
+      size: [1, "${input_sizes.n_target}", "${input_sizes.n_other}", "${input_sizes.n_step_hist}"]
+      # dtype: torch.bool
+    input/other_attr:
+      _target_: torch.rand
+      _args_: [1, "${input_sizes.n_target}", "${input_sizes.n_other}", "${input_sizes.n_step_hist}", "${input_sizes.agent_attr_dim}"]
+    input/tl_valid:
+      _target_: external_submodules.hptr.src.callbacks.wandb_callbacks.TorchOnesBool
+      size: [1, "${input_sizes.n_target}", "${input_sizes.n_step_hist}", "${input_sizes.n_tl}"]
+      # dtype: torch.bool
+    input/tl_attr:
+      _target_: torch.rand
+      _args_: [1, "${input_sizes.n_target}", "${input_sizes.n_step_hist}", "${input_sizes.n_tl}", "${input_sizes.tl_attr_dim}"]
+    input/map_valid:
+      _target_: external_submodules.hptr.src.callbacks.wandb_callbacks.TorchOnesBool
+      size: [1, "${input_sizes.n_target}", "${input_sizes.n_map}", "${input_sizes.n_pl_node}"]
+      # dtype: torch.bool
+    input/map_attr:
+      _target_: torch.rand
+      _args_: [1, "${input_sizes.n_target}", "${input_sizes.n_map}", "${input_sizes.n_pl_node}", "${input_sizes.map_attr_dim}"]
+    # inference_repeat_n: 1
+    # inference_cache_map: False
+    # kwargs:
+    ref_pos:
+      _target_: torch.rand
+      _args_: [1, "${input_sizes.n_target}", 1, 2]
+    ref_rot:
+      _target_: torch.rand
+      _args_: [1, "${input_sizes.n_target}", 2, 2]
+
+    # "agent/valid": [n_scene, n_step, n_agent], bool,
+    # "agent/pos": [n_scene, n_step, n_agent, 2], float32
+    # "agent/vel": [n_scene, n_step, n_agent, 2], float32, v_x, v_y
+    # "agent/spd": [n_scene, n_step, n_agent, 1], norm of vel, signed using yaw_bbox and vel_xy
+    # "agent/acc": [n_scene, n_step, n_agent, 1], m/s2, acc[t] = (spd[t]-spd[t-1])/dt
+    # "agent/yaw_bbox": [n_scene, n_step, n_agent, 1], float32, yaw of the bbox heading
+    # "agent/yaw_rate": [n_scene, n_step, n_agent, 1], rad/s, yaw_rate[t] = (yaw[t]-yaw[t-1])/dt
+    # "agent/type": [n_scene, n_agent, 3], bool one_hot [Vehicle=0, Pedestrian=1, Cyclist=2]
+    # "agent/role": [n_scene, n_agent, 3], bool [sdc=0, interest=1, predict=2]
+    # "agent/size": [n_scene, n_agent, 3], float32: [length, width, height]
+    # "map/valid": [n_scene, n_pl, n_pl_node], bool
+    # "map/type": [n_scene, n_pl, 11], bool one_hot (9 in nuPlan setup)
+    # "map/pos": [n_scene, n_pl, n_pl_node, 2], float32
+    # "map/dir": [n_scene, n_pl, n_pl_node, 2], float32
+    # "tl_stop/valid": [n_scene, n_step, n_tl_stop], bool
+    # "tl_stop/state": [n_scene, n_step, n_tl_stop, 5], bool one_hot (4 in nuPlan setup)
+    # "tl_stop/pos": [n_scene, n_step, n_tl_stop, 2], x,y
+    # "tl_stop/dir": [n_scene, n_step, n_tl_stop, 2], x,y
+    agent/valid:
+      _target_: external_submodules.hptr.src.callbacks.wandb_callbacks.TorchOnesBool
+      size: [1, "${input_sizes.n_step_hist}", "${input_sizes.n_agent}"]
+      # dtype: bool
+    agent/pos:
+      _target_: torch.rand
+      _args_: [1, "${input_sizes.n_step_hist}", "${input_sizes.n_agent}", 2]
+    agent/vel:
+      _target_: torch.rand
+      _args_: [1, "${input_sizes.n_step_hist}", "${input_sizes.n_agent}", 2]
+    agent/spd:
+      _target_: torch.rand
+      _args_: [1, "${input_sizes.n_step_hist}", "${input_sizes.n_agent}", 1]
+    agent/acc:
+      _target_: torch.rand
+      _args_: [1, "${input_sizes.n_step_hist}", "${input_sizes.n_agent}", 1]
+    agent/yaw_bbox:
+      _target_: torch.rand
+      _args_: [1, "${input_sizes.n_step_hist}", "${input_sizes.n_agent}", 1]
+    agent/yaw_rate:
+      _target_: torch.rand
+      _args_: [1, "${input_sizes.n_step_hist}", "${input_sizes.n_agent}", 1]
+    agent/type:
+      _target_: torch.rand
+      _args_: [1, "${input_sizes.n_agent}", 3]
+    agent/role:
+      _target_: torch.rand
+      _args_: [1, "${input_sizes.n_agent}", 3]
+    agent/size:
+      _target_: torch.rand
+      _args_: [1, "${input_sizes.n_agent}", 3]
+    agent/cmd:
+      _target_: torch.zeros
+      _args_: [1, "${input_sizes.n_agent}", 8]
+    map/valid:
+      _target_: external_submodules.hptr.src.callbacks.wandb_callbacks.TorchOnesBool
+      size: [1, "${input_sizes.n_map}", "${input_sizes.n_pl_node}"]
+      # dtype: bool
+    map/type:
+      _target_: torch.rand
+      _args_: [1, "${input_sizes.n_map}", "${input_sizes.map_type_dim}"]
+    map/pos:
+      _target_: torch.rand
+      _args_: [1, "${input_sizes.n_map}", "${input_sizes.n_pl_node}", 2]
+    map/dir:
+      _target_: torch.rand
+      _args_: [1, "${input_sizes.n_map}", "${input_sizes.n_pl_node}", 2]
+    tl_stop/valid:
+      _target_: external_submodules.hptr.src.callbacks.wandb_callbacks.TorchOnesBool
+      size: [1, "${input_sizes.n_step_hist}", "${input_sizes.n_tl}"]
+      # dtype: bool
+    tl_stop/state:
+      _target_: torch.rand
+      _args_: [1, "${input_sizes.n_step_hist}", "${input_sizes.n_tl}", "${input_sizes.tl_state_dim}"]
+    tl_stop/pos:
+      _target_: torch.rand
+      _args_: [1, "${input_sizes.n_step_hist}", "${input_sizes.n_tl}", 2]
+    tl_stop/dir:
+      _target_: torch.rand
+      _args_: [1, "${input_sizes.n_step_hist}", "${input_sizes.n_tl}", 2]
