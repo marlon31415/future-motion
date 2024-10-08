@@ -185,6 +185,7 @@ class InputProjections(nn.Module):
             self.fc_target = MLP([agent_attr_dim] + [hidden_dim] * n_layer_mlp, **mlp_cfg)
             self.fc_other = MLP([agent_attr_dim] + [hidden_dim] * n_layer_mlp, **mlp_cfg)
             self.fc_map = MLP([map_attr_dim] + [hidden_dim] * n_layer_mlp, **mlp_cfg)
+            self.fc_route = MLP([map_attr_dim] + [hidden_dim] * n_layer_mlp, **mlp_cfg)
 
         if self.add_learned_pe:
             if self.pl_aggr or self.use_point_net:
@@ -195,6 +196,7 @@ class InputProjections(nn.Module):
                 self.pe_target = nn.Parameter(torch.zeros([1, n_step_hist, hidden_dim]), requires_grad=True)
                 self.pe_other = nn.Parameter(torch.zeros([1, 1, n_step_hist, hidden_dim]), requires_grad=True)
                 self.pe_map = nn.Parameter(torch.zeros([1, 1, n_pl_node, hidden_dim]), requires_grad=True)
+                self.pe_route = nn.Parameter(torch.zeros([1, 1, n_pl_node, hidden_dim]), requires_grad=True)
             if self.use_current_tl:
                 self.pe_tl = nn.Parameter(torch.zeros([1, 1, 1, hidden_dim]), requires_grad=True)
             else:
@@ -210,8 +212,10 @@ class InputProjections(nn.Module):
         map_attr: Tensor,
         tl_valid: Tensor,
         tl_attr: Tensor,
+        route_valid: Tensor,
+        route_attr: Tensor,
     ) -> Tuple[
-        Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor
+        Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor, Tensor
     ]:
         """
         Args:
@@ -230,6 +234,8 @@ class InputProjections(nn.Module):
                     other_attr: [n_scene, n_target, n_other, n_step_hist, agent_attr_dim]
                     map_valid: [n_scene, n_target, n_map, n_pl_node], bool
                     map_attr: [n_scene, n_target, n_map, n_pl_node, map_attr_dim]
+                    route_valid: [n_scene, n_target, n_route, n_pl_node], bool -> route only valid for n_sdc agents (nuplan: n_sdcs=1)
+                    route_attr: [n_scene, n_target, n_route, n_pl_node, map_attr_dim]
             # traffic lights: cannot be aggregated, detections are not tracked.
                 if use_current_tl:
                     tl_valid: [n_scene, n_target, 1, n_tl], bool
@@ -247,6 +253,8 @@ class InputProjections(nn.Module):
             tl_valid: [n_batch, n_tl * n_step_hist]
             map_emb: [n_batch, n_map or n_map * n_pl_node, hidden_dim]
             map_valid: [n_batch, n_map or n_map * n_pl_node]
+            route_emb: [n_batch, n_route or n_route * n_pl_node, hidden_dim]
+            route_valid: [n_batch, n_route or n_route * n_pl_node]
         """
         # [n_batch, n_step_hist/1, n_tl, tl_attr_dim]
         tl_valid = tl_valid.flatten(0, 1)
@@ -271,12 +279,16 @@ class InputProjections(nn.Module):
             # [n_batch, (n_step_hist), agent_attr_dim]
             target_valid = target_valid.flatten(0, 1)
             target_emb = self.fc_target(target_attr.flatten(0, 1), target_valid)
+            # [n_batch, n_route, (n_pl_node), map_attr_dim]
+            route_valid = route_valid.flatten(0, 1)
+            route_emb = self.fc_route(route_attr.flatten(0, 1), route_valid)
 
         if self.add_learned_pe:
             tl_emb = tl_emb + self.pe_tl
             map_emb = map_emb + self.pe_map
             other_emb = other_emb + self.pe_other
             target_emb = target_emb + self.pe_target
+            route_emb = route_emb + self.pe_route
 
         tl_emb = tl_emb.flatten(1, 2)  # [n_batch, n_step_hist * n_tl, :]
         tl_valid = tl_valid.flatten(1, 2)  # [n_batch, n_step_hist * n_tl]
@@ -289,12 +301,15 @@ class InputProjections(nn.Module):
             map_valid = map_valid.flatten(1, 2)  # [n_batch, n_map * n_pl_node]
             other_emb = other_emb.flatten(1, 2)  # [n_batch, n_other * n_step_hist, :]
             other_valid = other_valid.flatten(1, 2)  # [n_batch, n_other * n_step_hist]
+            route_emb = route_emb.flatten(1, 2) # [n_batch, n_route * n_pl_node, :]
+            route_valid = route_valid.flatten(1, 2) # [n_batch, n_route * n_pl_node]
 
         return (
             target_emb, target_valid,
             other_emb, other_valid,
             tl_emb, tl_valid,
             map_emb, map_valid,
+            route_emb, route_valid,
         )
 
 

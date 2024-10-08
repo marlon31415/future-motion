@@ -38,7 +38,9 @@ class SceneMotion(nn.Module):
         self.n_decoders = n_decoders
         self.pl_aggr = pl_aggr
         self.pred_subsampling_rate = kwargs.get("pred_subsampling_rate", 1)
-        motion_decoder["mlp_head"]["n_step_future"] = motion_decoder["mlp_head"]["n_step_future"] // self.pred_subsampling_rate
+        motion_decoder["mlp_head"]["n_step_future"] = (
+            motion_decoder["mlp_head"]["n_step_future"] // self.pred_subsampling_rate
+        )
 
         self.local_encoder = InputProjections(
             hidden_dim=hidden_dim,
@@ -49,36 +51,45 @@ class SceneMotion(nn.Module):
             use_current_tl=use_current_tl,
             n_step_hist=n_step_hist,
             n_pl_node=n_pl_node,
-            **local_encoder
+            **local_encoder,
         )
         # Opt. include in local encoder
         self.to_ref_pos_emb = nn.Linear(2, hidden_dim)
         self.to_ref_rot_emb = nn.Linear(4, hidden_dim)
 
         self.reduction_decoder = ReductionDecoder(
-            hidden_dim=hidden_dim,
-            tf_cfg=tf_cfg,
-            **reduction_decoder
+            hidden_dim=hidden_dim, tf_cfg=tf_cfg, **reduction_decoder
         )
 
         self.latent_context_module = TransformerBlock(
-            d_model=hidden_dim, d_feedforward=hidden_dim * 4, **latent_context_module, **tf_cfg
+            d_model=hidden_dim,
+            d_feedforward=hidden_dim * 4,
+            **latent_context_module,
+            **tf_cfg,
         )
 
         motion_decoder["tf_cfg"] = tf_cfg
         motion_decoder["hidden_dim"] = hidden_dim
         self.motion_decoder = DecoderEnsemble(n_decoders, decoder_cfg=motion_decoder)
 
-        model_parameters = filter(lambda p: p.requires_grad, self.local_encoder.parameters())
+        model_parameters = filter(
+            lambda p: p.requires_grad, self.local_encoder.parameters()
+        )
         total_params = sum([np.prod(p.size()) for p in model_parameters])
         print(f"Local encoder parameters: {total_params/1000000:.2f}M")
-        model_parameters = filter(lambda p: p.requires_grad, self.reduction_decoder.parameters())
+        model_parameters = filter(
+            lambda p: p.requires_grad, self.reduction_decoder.parameters()
+        )
         total_params = sum([np.prod(p.size()) for p in model_parameters])
         print(f"Reduction decoder parameters: {total_params/1000000:.2f}M")
-        model_parameters = filter(lambda p: p.requires_grad, self.latent_context_module.parameters())
+        model_parameters = filter(
+            lambda p: p.requires_grad, self.latent_context_module.parameters()
+        )
         total_params = sum([np.prod(p.size()) for p in model_parameters])
         print(f"Latent context module parameters: {total_params/1000000:.2f}M")
-        model_parameters = filter(lambda p: p.requires_grad, self.motion_decoder.parameters())
+        model_parameters = filter(
+            lambda p: p.requires_grad, self.motion_decoder.parameters()
+        )
         total_params = sum([np.prod(p.size()) for p in model_parameters])
         print(f"Motion decoder parameters: {total_params/1000000:.2f}M")
 
@@ -129,10 +140,21 @@ class SceneMotion(nn.Module):
             pred: [n_decoder, n_scene, n_target, n_pred, n_step_future, pred_dim]
         """
         for _ in range(inference_repeat_n):
-            valid = target_valid if self.pl_aggr else target_valid.any(-1)  # [n_scene, n_target]
-
-            # Local encoder
-            target_emb, target_valid, other_emb, other_valid, tl_emb, tl_valid, map_emb, map_valid = self.local_encoder(
+            valid = (
+                target_valid if self.pl_aggr else target_valid.any(-1)
+            )  # [n_scene, n_target]
+            (
+                target_emb,
+                target_valid,
+                other_emb,
+                other_valid,
+                tl_emb,
+                tl_valid,
+                map_emb,
+                map_valid,
+                route_emb,
+                route_valid,
+            ) = self.local_encoder(
                 target_valid=target_valid,
                 target_attr=target_attr,
                 other_valid=other_valid,
@@ -141,31 +163,69 @@ class SceneMotion(nn.Module):
                 map_attr=map_attr,
                 tl_valid=tl_valid,
                 tl_attr=tl_attr,
+                route_valid=route_valid,
+                route_emb=route_emb,
             )
 
-            emb = torch.cat([target_emb, other_emb, tl_emb, map_emb], dim=1)
-            emb_invalid = ~torch.cat([target_valid, other_valid, tl_valid, map_valid], dim=1)
-            
-            # Reduction decoder
-            red_emb = self.reduction_decoder(emb=emb, emb_invalid=emb_invalid, valid=valid)
+            emb = torch.cat([target_emb, other_emb, tl_emb, map_emb, route_emb], dim=1)
+            emb_invalid = ~torch.cat(
+                [target_valid, other_valid, tl_valid, map_valid, route_valid], dim=1
+            )
 
-            ref_pos_emb = self.to_ref_pos_emb(kwargs["ref_pos"].flatten(0, 1).flatten(1, 2))
-            ref_rot_emb = self.to_ref_rot_emb(kwargs["ref_rot"].flatten(0, 1).flatten(1, 2))
-            
+            # Reduction decoder
+            red_emb = self.reduction_decoder(
+                emb=emb, emb_invalid=emb_invalid, valid=valid
+            )
+
+            ref_pos_emb = self.to_ref_pos_emb(
+                kwargs["ref_pos"].flatten(0, 1).flatten(1, 2)
+            )
+            ref_rot_emb = self.to_ref_rot_emb(
+                kwargs["ref_rot"].flatten(0, 1).flatten(1, 2)
+            )
+
             # Concat & rearrange to learn scene-wide context: n_batch = n_scene (not n_scene * n_agent)
-            red_emb = torch.cat([red_emb, ref_pos_emb[:, None, :], ref_rot_emb[:, None, :]], dim=1)
+            red_emb = torch.cat(
+                [red_emb, ref_pos_emb[:, None, :], ref_rot_emb[:, None, :]], dim=1
+            )
             n_scene, n_agent = valid.shape
-            scene_emb = rearrange(red_emb, "(n_scene n_agent) n_token ... -> n_scene (n_agent n_token) ...", n_scene=n_scene, n_agent=n_agent, n_token=red_emb.shape[1])
-            scene_emb_invalid = torch.zeros(scene_emb.shape[0], scene_emb.shape[1], device=scene_emb.device, dtype=torch.bool)
+            scene_emb = rearrange(
+                red_emb,
+                "(n_scene n_agent) n_token ... -> n_scene (n_agent n_token) ...",
+                n_scene=n_scene,
+                n_agent=n_agent,
+                n_token=red_emb.shape[1],
+            )
+            scene_emb_invalid = torch.zeros(
+                scene_emb.shape[0],
+                scene_emb.shape[1],
+                device=scene_emb.device,
+                dtype=torch.bool,
+            )
 
             # Latent context module
-            scene_emb, _ = self.latent_context_module(src=scene_emb, tgt=scene_emb, tgt_padding_mask=scene_emb_invalid)
+            scene_emb, _ = self.latent_context_module(
+                src=scene_emb, tgt=scene_emb, tgt_padding_mask=scene_emb_invalid
+            )
 
             # Rearrange again for motion decoding
-            emb = rearrange(scene_emb, "n_scene (n_agent n_token) ... -> (n_scene n_agent) n_token ...", n_scene=n_scene, n_agent=n_agent, n_token=red_emb.shape[1])
-            emb_invalid = rearrange(scene_emb_invalid, "n_scene (n_agent n_token) -> (n_scene n_agent) n_token", n_scene=n_scene, n_agent=n_agent)
+            emb = rearrange(
+                scene_emb,
+                "n_scene (n_agent n_token) ... -> (n_scene n_agent) n_token ...",
+                n_scene=n_scene,
+                n_agent=n_agent,
+                n_token=red_emb.shape[1],
+            )
+            emb_invalid = rearrange(
+                scene_emb_invalid,
+                "n_scene (n_agent n_token) -> (n_scene n_agent) n_token",
+                n_scene=n_scene,
+                n_agent=n_agent,
+            )
             # Motion decoder
-            conf, pred = self.motion_decoder(valid=valid, target_type=target_type, emb=emb, emb_invalid=emb_invalid)
+            conf, pred = self.motion_decoder(
+                valid=valid, target_type=target_type, emb=emb, emb_invalid=emb_invalid
+            )
 
             if self.pred_subsampling_rate != 1:
                 n_decoder, n_scene, n_target, n_pred, _, pred_dim = pred.shape
@@ -173,11 +233,17 @@ class SceneMotion(nn.Module):
                     pred,
                     "n_decoder n_scene n_target n_pred n_step_future pred_dim -> (n_decoder n_scene n_target n_pred) pred_dim n_step_future",
                 )
-                pred = F.interpolate(pred, mode="linear", scale_factor=self.pred_subsampling_rate)
+                pred = F.interpolate(
+                    pred, mode="linear", scale_factor=self.pred_subsampling_rate
+                )
                 pred = rearrange(
                     pred,
                     "(n_decoder n_scene n_target n_pred) pred_dim n_step_future -> n_decoder n_scene n_target n_pred n_step_future pred_dim",
-                    n_decoder=n_decoder, n_scene=n_scene, n_target=n_target, n_pred=n_pred, pred_dim=pred_dim,
+                    n_decoder=n_decoder,
+                    n_scene=n_scene,
+                    n_target=n_target,
+                    n_pred=n_pred,
+                    pred_dim=pred_dim,
                 )
 
         assert torch.isfinite(conf).all()
