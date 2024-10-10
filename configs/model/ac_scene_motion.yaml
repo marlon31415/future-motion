@@ -76,12 +76,13 @@ pre_processing:
     n_other: 48
     n_map: 128 # 512
     n_tl: 24
+    n_route: 50
   ac_global:
     _target_: data.ac_scene_motion.AgentCentricSceneMotion
     dropout_p_history: 0.15
     use_current_tl: False
     add_ohe: True
-    pl_aggr: False
+    pl_aggr: False # True: not implemented yet for route data
     pose_pe: # xy_dir, mpa_pl, pe_xy_dir, pe_xy_yaw
       agent: xy_dir
       map: mpa_pl
