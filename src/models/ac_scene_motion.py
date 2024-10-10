@@ -104,6 +104,8 @@ class SceneMotion(nn.Module):
         tl_attr: Tensor,
         map_valid: Tensor,
         map_attr: Tensor,
+        route_valid: Tensor,
+        route_attr: Tensor,
         inference_repeat_n: int = 1,
         inference_cache_map: bool = False,
         **kwargs,
@@ -126,6 +128,8 @@ class SceneMotion(nn.Module):
                     other_attr: [n_scene, n_target, n_other, n_step_hist, agent_attr_dim]
                     map_valid: [n_scene, n_target, n_map, n_pl_node], bool
                     map_attr: [n_scene, n_target, n_map, n_pl_node, map_attr_dim]
+                    route_valid: [n_scene, n_target, n_route, n_pl_node], bool
+                    route_attr: [n_scene, n_target, n_route, n_pl_node, map_attr_dim]
             # traffic lights: cannot be aggregated, detections are not tracked.
                 if use_current_tl:
                     tl_valid: [n_scene, n_target, 1, n_tl], bool
@@ -164,7 +168,7 @@ class SceneMotion(nn.Module):
                 tl_valid=tl_valid,
                 tl_attr=tl_attr,
                 route_valid=route_valid,
-                route_emb=route_emb,
+                route_attr=route_attr,
             )
 
             emb = torch.cat([target_emb, other_emb, tl_emb, map_emb, route_emb], dim=1)
