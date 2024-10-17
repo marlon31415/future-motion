@@ -130,6 +130,8 @@ class SceneMotion(nn.Module):
         """
         for _ in range(inference_repeat_n):
             valid = target_valid if self.pl_aggr else target_valid.any(-1)  # [n_scene, n_target]
+
+            # Local encoder
             target_emb, target_valid, other_emb, other_valid, tl_emb, tl_valid, map_emb, map_valid = self.local_encoder(
                 target_valid=target_valid,
                 target_attr=target_attr,
@@ -144,6 +146,7 @@ class SceneMotion(nn.Module):
             emb = torch.cat([target_emb, other_emb, tl_emb, map_emb], dim=1)
             emb_invalid = ~torch.cat([target_valid, other_valid, tl_valid, map_valid], dim=1)
             
+            # Reduction decoder
             red_emb = self.reduction_decoder(emb=emb, emb_invalid=emb_invalid, valid=valid)
 
             ref_pos_emb = self.to_ref_pos_emb(kwargs["ref_pos"].flatten(0, 1).flatten(1, 2))
@@ -155,11 +158,13 @@ class SceneMotion(nn.Module):
             scene_emb = rearrange(red_emb, "(n_scene n_agent) n_token ... -> n_scene (n_agent n_token) ...", n_scene=n_scene, n_agent=n_agent, n_token=red_emb.shape[1])
             scene_emb_invalid = torch.zeros(scene_emb.shape[0], scene_emb.shape[1], device=scene_emb.device, dtype=torch.bool)
 
+            # Latent context module
             scene_emb, _ = self.latent_context_module(src=scene_emb, tgt=scene_emb, tgt_padding_mask=scene_emb_invalid)
 
             # Rearrange again for motion decoding
             emb = rearrange(scene_emb, "n_scene (n_agent n_token) ... -> (n_scene n_agent) n_token ...", n_scene=n_scene, n_agent=n_agent, n_token=red_emb.shape[1])
             emb_invalid = rearrange(scene_emb_invalid, "n_scene (n_agent n_token) -> (n_scene n_agent) n_token", n_scene=n_scene, n_agent=n_agent)
+            # Motion decoder
             conf, pred = self.motion_decoder(valid=valid, target_type=target_type, emb=emb, emb_invalid=emb_invalid)
 
             if self.pred_subsampling_rate != 1:
