@@ -52,7 +52,7 @@ model:
 
 
 train_metric:
-  _target_: external_submodules.hptr.src.models.metrics.nll.NllMetrics
+  _target_: models.metrics.planning.EgoPlanningMetrics
   winner_takes_all: joint_hard1 # none, or (joint) + hard + (1-6), or cmd
   l_pos: nll_torch # nll_torch, nll_mtr, huber, l2
   p_rand_train_agent: -1 # 0.2

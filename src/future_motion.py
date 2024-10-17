@@ -302,7 +302,10 @@ class FutureMotion(LightningModule):
 
             return metrics_dict[f"{self.train_metric.prefix}/loss"] + linear_loss
 
-        return metrics_dict[f"{self.train_metric.prefix}/loss"]
+        return (
+            metrics_dict[f"{self.train_metric.prefix}/loss"]
+            + metrics_dict[f"{self.train_metric.ego_loss_prefix}/loss"]
+        )
 
     def validation_step(self, batch: Dict[str, Tensor], batch_idx: int) -> Dict:
         for _ in range(self.hparams.inference_repeat_n):
