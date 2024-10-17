@@ -147,6 +147,8 @@ class SceneMotion(nn.Module):
             valid = (
                 target_valid if self.pl_aggr else target_valid.any(-1)
             )  # [n_scene, n_target]
+
+            # Local encoder
             (
                 target_emb,
                 target_valid,
