@@ -83,10 +83,12 @@ pre_processing:
     use_current_tl: False
     add_ohe: True
     pl_aggr: False # True: not implemented yet for route data
+    pl_aggr_route: False
     pose_pe: # xy_dir, mpa_pl, pe_xy_dir, pe_xy_yaw
       agent: xy_dir
       map: mpa_pl
       tl: mpa_pl
+      route: mpa_pl
 
 post_processing:
   to_dict:
