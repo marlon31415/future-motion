@@ -26,8 +26,19 @@ model:
       use_layernorm: False
       use_batchnorm: False
       dropout_p: null
+  local_route_encoder:
+    add_learned_pe: True
+    n_layer_mlp: 3
+    mlp_cfg:
+      end_layer_activation: True
+      use_layernorm: False
+      use_batchnorm: False
+      dropout_p: null
   reduction_decoder:
     n_descriptors: 128
+    n_layer_tf_all2all: 4
+  route_reduction_decoder:
+    n_descriptors: 20
     n_layer_tf_all2all: 4
   latent_context_module:
     n_layer: 6
@@ -76,16 +87,19 @@ pre_processing:
     n_other: 48
     n_map: 128 # 512
     n_tl: 24
+    n_route: 50
   ac_global:
     _target_: data.ac_scene_motion.AgentCentricSceneMotion
     dropout_p_history: 0.15
     use_current_tl: False
     add_ohe: True
     pl_aggr: False
+    pl_aggr_route: False
     pose_pe: # xy_dir, mpa_pl, pe_xy_dir, pe_xy_yaw
       agent: xy_dir
       map: mpa_pl
       tl: mpa_pl
+      route: mpa_pl
 
 post_processing:
   to_dict:

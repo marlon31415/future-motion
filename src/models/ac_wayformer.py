@@ -296,6 +296,57 @@ class InputProjections(nn.Module):
             tl_emb, tl_valid,
             map_emb, map_valid,
         )
+    
+class InputRouteProjections(nn.Module):
+    def __init__(
+        self,
+        hidden_dim: int,
+        route_attr_dim: int,
+        pl_aggr: bool,
+        n_pl_node: int,
+        add_learned_pe: bool,
+        n_layer_mlp: int,
+        mlp_cfg: DictConfig,
+    ) -> None:
+        super().__init__()
+        self.pl_aggr = pl_aggr
+        self.add_learned_pe = add_learned_pe
+
+        self.fc_route = MLP([route_attr_dim] + [hidden_dim] * n_layer_mlp, **mlp_cfg)
+
+        if self.add_learned_pe:
+            if self.pl_aggr:
+                self.pe_route = nn.Parameter(torch.zeros([1, 1, hidden_dim]), requires_grad=True)
+            else:
+                self.pe_route = nn.Parameter(torch.zeros([1, 1, n_pl_node, hidden_dim]), requires_grad=True)
+
+    def forward(self, route_valid: Tensor, route_attr: Tensor) -> Tuple[Tensor, Tensor]:
+        """
+        Args:
+            # route
+                if pl_aggr:
+                    route_valid: [n_scene, n_target, n_route], bool
+                    route_attr: [n_scene, n_target, n_route, route_attr_dim]
+                else:
+                    route_valid: [n_scene, n_target, n_route, n_pl_node], bool
+                    route_attr: [n_scene, n_target, n_route, n_pl_node, route_attr_dim]
+
+        Returns:
+            route_emb: [n_batch, n_route or n_route * n_pl_node, hidden_dim]
+            route_valid: [n_batch, n_route or n_route * n_pl_node]
+        """     
+        # [n_batch, n_route, (n_pl_node), route_attr_dim]
+        route_valid = route_valid.flatten(0, 1)
+        route_emb = self.fc_route(route_attr.flatten(0, 1), route_valid)
+
+        if self.add_learned_pe:
+            route_emb = route_emb + self.pe_route
+
+        if not self.pl_aggr:
+            route_emb = route_emb.flatten(1, 2)  # [n_batch, n_map * n_pl_node, :]
+            route_valid = route_valid.flatten(1, 2)  # [n_batch, n_map * n_pl_node]
+
+        return route_emb, route_valid
 
 
 class EarlyFusionEncoder(nn.Module):
