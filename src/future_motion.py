@@ -23,6 +23,7 @@ class FutureMotion(LightningModule):
         data_size: DictConfig,
         train_metric: DictConfig,
         waymo_metric: DictConfig,
+        waymo_ego_metric: DictConfig,
         model: DictConfig,
         optimizer: DictConfig,
         lr_scheduler: DictConfig,
@@ -85,6 +86,15 @@ class FutureMotion(LightningModule):
             step_current=time_step_current,
             interactive_challenge=interactive_challenge,
             n_agent=data_size["agent/valid"][-1],
+        )
+
+        self.waymo_ego_metric = hydra.utils.instantiate(
+            waymo_ego_metric,
+            prefix="waymo_ego_pred",
+            step_gt=time_step_end,
+            step_current=time_step_current,
+            interactive_challenge=interactive_challenge,
+            n_agent=1,
         )
 
         if measure_neural_collapse:
@@ -477,6 +487,12 @@ class FutureMotion(LightningModule):
         )
         self.waymo_metric.aggregate_on_cpu(waymo_ops_inputs)
         self.waymo_metric.reset()
+        # ! waymo ego metrics
+        waymo_ego_ops_inputs = self.waymo_ego_metric(
+            batch, pred_dict["waymo_trajs"], pred_dict["waymo_scores"]
+        )
+        self.waymo_ego_metric.aggregate_on_cpu(waymo_ego_ops_inputs)
+        self.waymo_ego_metric.reset()
 
         self._save_to_submission_files(pred_dict, batch)
 
@@ -492,6 +508,11 @@ class FutureMotion(LightningModule):
             "val/loss",
             -epoch_waymo_metrics[f"{self.waymo_metric.prefix}/mean_average_precision"],
         )
+
+        epoch_waymo_ego_metrics = self.waymo_ego_metric.compute_waymo_motion_metrics()
+        epoch_waymo_ego_metrics["epoch"] = self.current_epoch
+        for k, v in epoch_waymo_ego_metrics.items():
+            self.log(k, v, on_epoch=True)
 
         if self.global_rank == 0:
             self.sub_womd.save_sub_files(self.logger[0])
