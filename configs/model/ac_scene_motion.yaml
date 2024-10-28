@@ -68,6 +68,10 @@ waymo_metric:
   _target_: external_submodules.hptr.src.models.metrics.waymo.WaymoMetrics
   n_max_pred_agent: 8
 
+waymo_ego_metric:
+  _target_: models.metrics.waymo_ego.WaymoEgoMetrics
+  n_max_pred_agent: 1
+
 pre_processing:
   agent_centric:
     _target_: external_submodules.hptr.src.data_modules.agent_centric.AgentCentricPreProcessing
@@ -76,16 +80,19 @@ pre_processing:
     n_other: 48
     n_map: 128 # 512
     n_tl: 24
+    n_route: 50
   ac_global:
     _target_: data.ac_scene_motion.AgentCentricSceneMotion
     dropout_p_history: 0.15
     use_current_tl: False
     add_ohe: True
     pl_aggr: False
+    pl_aggr_route: False
     pose_pe: # xy_dir, mpa_pl, pe_xy_dir, pe_xy_yaw
       agent: xy_dir
       map: mpa_pl
       tl: mpa_pl
+      route: mpa_pl
 
 post_processing:
   to_dict:
