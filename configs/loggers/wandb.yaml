@@ -7,3 +7,4 @@ wandb:
   tags: []
   job_type: train
   entity: kit_mrt
+  mode: offline
