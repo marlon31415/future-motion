@@ -73,11 +73,6 @@ class WaymoEgoMetrics(WaymoMetrics):
             else None
         )
 
-        for key, value in ego_batch.items():
-            print(f"{key}: {value.shape}")
-        print(f"pred_traj: {pred_traj.shape}")
-        print(f"pred_score: {pred_score.shape}")
-
         return ego_batch, ego_pred_traj, ego_pred_score
 
     def forward(
