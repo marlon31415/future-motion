@@ -1,7 +1,7 @@
 from typing import Dict, List, Optional, Tuple
 from torch import Tensor
 
-from external_submodules.hptr.src.models.metrics.waymo import WaymoMetrics
+from models.metrics.waymo import WaymoMetrics
 
 
 class WaymoEgoMetrics(WaymoMetrics):

@@ -3,16 +3,20 @@ import torch
 from typing import Dict
 from torch import nn, Tensor
 from omegaconf import DictConfig
-from external_submodules.hptr.src.utils.pose_pe import PosePE
+from utils.pose_pe import PosePE
 
 from einops import rearrange
 from einops.layers.torch import Rearrange
 
-from .lang_labels import get_label_id2
-from .lang_labels import get_text_description
-from .lang_labels import agent_dict, direction_dict, speed_dict, acceleration_dict
-from .lang_labels import get_speed_class, get_acceleration_class, get_label_id2, classify_movement
-
+from data.lang_labels import get_label_id2
+from data.lang_labels import get_text_description
+from data.lang_labels import agent_dict, direction_dict, speed_dict, acceleration_dict
+from data.lang_labels import (
+    get_speed_class,
+    get_acceleration_class,
+    get_label_id2,
+    classify_movement,
+)
 
 
 class AgentCentricAlign(nn.Module):

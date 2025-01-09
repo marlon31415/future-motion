@@ -4,7 +4,7 @@ from torch import Tensor
 from torchmetrics.metric import Metric
 from pytorch3d.loss import chamfer_distance
 
-from external_submodules.hptr.src.models.metrics.nll import NllMetrics
+from models.metrics.nll import NllMetrics
 
 
 class EgoPlanningMetrics(NllMetrics):

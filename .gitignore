@@ -3,3 +3,4 @@ dev*
 **/__pycache__
 logs*
 --*
+*.egg-info

@@ -9,8 +9,8 @@ from omegaconf import DictConfig
 from pytorch_lightning import LightningModule
 from typing import Dict, List, Tuple, Optional
 
-from models.modules.neural_collapse import OnlineLinearClassifier
-from models.metrics.representation_eval import std_of_l2_normalized
+from model.modules.neural_collapse import OnlineLinearClassifier
+from model.metrics.representation_eval import std_of_l2_normalized
 from data.lang_labels import agent_dict, direction_dict, speed_dict, acceleration_dict
 from data.plot_3d import plot_motion_forecasts, mplfig_to_npimage, tensor_dict_to_cpu
 
