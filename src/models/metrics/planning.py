@@ -144,11 +144,14 @@ class EgoPlanningMetrics(NllMetrics):
         self.planning_metrics(**kwargs)
         loss_dict[f"{self.ego_loss_prefix}/gt_loss"] = self.ego_gt_loss
         loss_dict[f"{self.ego_loss_prefix}/route_loss"] = self.ego_route_loss
-        ego_planning_loss = self.planning_loss(
-            self.ego_gt_loss,
-            self.ego_route_loss,
-            self.weight_ego_pos,
-            self.weight_ego_route,
+        # ego_planning_loss = self.planning_loss(
+        #     self.ego_gt_loss,
+        #     self.ego_route_loss,
+        #     self.weight_ego_pos,
+        #     self.weight_ego_route,
+        # )
+        ego_planning_loss = (
+            self.ego_gt_loss + self.ego_route_loss / self.ego_route_loss.detach()
         )
         loss_dict[f"{self.ego_loss_prefix}/loss"] = ego_planning_loss
         return loss_dict
