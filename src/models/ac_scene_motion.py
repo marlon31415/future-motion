@@ -11,6 +11,7 @@ from models.modules.transformer import TransformerBlock
 from models.modules.decoder_ensemble import DecoderEnsemble
 
 from model.ac_wayformer import InputProjections
+from model.ac_wayformer import InputRouteProjections
 from model.ac_red_motion import ReductionDecoder
 
 
