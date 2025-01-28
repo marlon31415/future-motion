@@ -12,6 +12,9 @@ model:
   _target_: model.ac_scene_motion.SceneMotion
   hidden_dim: 256
   n_decoders: 1
+  use_ego_nav: True
+  nav_with_route: False
+  nav_early_fusion: True
   tf_cfg:
     n_head: 4
     dropout_p: 0.1
@@ -74,6 +77,7 @@ train_metric:
   w_yaw: [1.0, 1.0, 1.0]
   w_vel: [1.0, 1.0, 1.0]
   w_spd: [0, 0, 0]
+  nav_with_route: False
 
 waymo_metric:
   _target_: models.metrics.waymo.WaymoMetrics
@@ -126,7 +130,7 @@ post_processing:
 # * optimizer
 optimizer:
   _target_: torch.optim.AdamW
-  lr: 4.4e-4 # 2e-4, 1e-5
+  lr: 2e-4 # 2e-4, 1e-5
 lr_scheduler:
   _target_: torch.optim.lr_scheduler.StepLR
   gamma: 0.5

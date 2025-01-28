@@ -12,19 +12,20 @@ class EgoPlanningMetrics(NllMetrics):
     This Loss build upon the NllMetrics class and extends it with additional metrics for ego planning.
     """
 
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, nav_with_route, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self.weight_ego_pos = 1.0
-        self.weight_ego_route = 1.0
+        self.nav_with_route = nav_with_route
 
         self.ego_loss_prefix = f"{self.prefix}/ego"
         del kwargs["prefix"]
 
         self.route_loss = RouteLoss(prefix=self.ego_loss_prefix, **kwargs)
+        self.goal_loss = GoalLoss(prefix=self.ego_loss_prefix, **kwargs)
         self.gt_loss = NllMetrics(prefix=self.ego_loss_prefix, **kwargs)
 
         self.add_state("ego_gt_loss", default=torch.tensor(0), dist_reduce_fx="sum")
         self.add_state("ego_route_loss", default=torch.tensor(0), dist_reduce_fx="sum")
+        self.add_state("ego_goal_loss", default=torch.tensor(0), dist_reduce_fx="sum")
 
     def planning_metrics(
         self,
@@ -42,6 +43,8 @@ class EgoPlanningMetrics(NllMetrics):
         gt_cmd: Tensor,
         gt_route_valid: Tensor,
         gt_route_pos: Tensor,
+        gt_route_goal: Tensor,
+        gt_route_goal_valid: Tensor,
         **kwargs,
     ) -> None:
         """
@@ -60,6 +63,7 @@ class EgoPlanningMetrics(NllMetrics):
             gt_cmd: [n_scene, n_agent, 8], one hot bool
             gt_route_valid: [n_scene, n_agent, n_pl_route, n_pl_node], bool
             gt_route_pos: [n_scene, n_agent, n_pl_route, n_pl_node, 2]
+            gt_route_goal: [n_scene, n_agent, n_pl_route, 2]
         """
         n_decoder, n_scene, n_agent, n_pred, n_step_future, _ = pred_pos.shape
         _, _, n_route, n_pl_node = gt_route_valid.shape
@@ -100,59 +104,35 @@ class EgoPlanningMetrics(NllMetrics):
         ego_batch["gt_route_pos"] = gt_route_pos[ego_mask[0]].view(
             n_scene, 1, n_route, n_pl_node, 2
         )
+        ego_batch["gt_route_goal"] = gt_route_goal[ego_mask[0]].view(n_scene, 1, 2)
+        ego_batch["gt_route_goal_valid"] = gt_route_goal_valid[ego_mask[0]].view(
+            n_scene, 1, 1
+        )
 
         # ! loss
         ego_nll_dict = self.gt_loss.forward(**ego_batch)
-        ego_route_loss_dict = self.route_loss.forward(**ego_batch)
-
         self.ego_gt_loss = ego_nll_dict[f"{self.ego_loss_prefix}/loss"]
-        self.ego_route_loss = ego_route_loss_dict[f"{self.ego_loss_prefix}/loss"]
-
-    def planning_loss(
-        self,
-        gt_loss: Tensor,
-        route_loss: Tensor,
-        gt_weight: float,
-        route_weight: float,
-        norm_weights=True,
-        reduction: Optional[str] = "sum",
-    ) -> Tensor:
-        """
-        Args:
-            gt_loss: [1], float
-            route_loss: [1], float
-            gt_weight: float
-            route_weight: float
-            norm_weights: bool, whether to normalize the weights
-            reduction: str, "mean" or "sum"
-        """
-        if norm_weights:
-            gt_weight /= gt_weight + route_weight
-            route_weight /= gt_weight + route_weight
-        if reduction == "mean":
-            return torch.mean(
-                torch.tensor([gt_weight, route_weight])
-                * torch.tensor([gt_loss, route_loss])
-            )
-        elif reduction == "sum":
-            return gt_weight * gt_loss + route_weight * route_loss
+        if self.nav_with_route:
+            ego_route_loss_dict = self.route_loss.forward(**ego_batch)
+            self.ego_route_loss = ego_route_loss_dict[f"{self.ego_loss_prefix}/loss"]
         else:
-            raise ValueError(f"reduction {reduction} not supported")
+            ego_goal_loss_dict = self.goal_loss.forward(**ego_batch)
+            self.ego_goal_loss = ego_goal_loss_dict[f"{self.ego_loss_prefix}/loss"]
 
     def forward(self, **kwargs) -> Dict[str, Tensor]:
         loss_dict = super().forward(**kwargs)
+
         self.planning_metrics(**kwargs)
+
         loss_dict[f"{self.ego_loss_prefix}/gt_loss"] = self.ego_gt_loss
-        loss_dict[f"{self.ego_loss_prefix}/route_loss"] = self.ego_route_loss
-        # ego_planning_loss = self.planning_loss(
-        #     self.ego_gt_loss,
-        #     self.ego_route_loss,
-        #     self.weight_ego_pos,
-        #     self.weight_ego_route,
-        # )
-        ego_planning_loss = (
-            self.ego_gt_loss + self.ego_route_loss / self.ego_route_loss.detach()
-        )
+        if self.nav_with_route:
+            loss_dict[f"{self.ego_loss_prefix}/route_loss"] = self.ego_route_loss
+            ego_nav_loss = self.ego_route_loss
+        else:
+            loss_dict[f"{self.ego_loss_prefix}/goal_loss"] = self.ego_goal_loss
+            ego_nav_loss = self.ego_goal_loss
+
+        ego_planning_loss = self.ego_gt_loss + ego_nav_loss / ego_nav_loss.detach()
         loss_dict[f"{self.ego_loss_prefix}/loss"] = ego_planning_loss
         return loss_dict
 
@@ -217,4 +197,84 @@ class RouteLoss(Metric):
 
         # Return the loss as a dictionary
         out_dict = {f"{self.prefix}/loss": avg_chamfer_loss}
+        return out_dict
+
+
+class GoalLoss(Metric):
+    def __init__(self, prefix: str, n_decoders: int, **kwargs) -> None:
+        super().__init__(dist_sync_on_step=False)
+        self.prefix = prefix
+        self.n_decoders = n_decoders
+
+        self.mse_loss = torch.nn.MSELoss()
+        self.add_state("loss", default=torch.tensor(0.0), dist_reduce_fx="sum")
+
+    def update(
+        self,
+        pred_conf: Tensor,
+        pred_pos: Tensor,
+        gt_valid: Tensor,
+        gt_route_goal_valid: Tensor,
+        gt_route_goal: Tensor,
+        **kwargs,
+    ) -> None:
+        n_decoder, n_scene, n_agent, n_pred, n_step_future, _ = pred_pos.shape
+        self.n_scene = n_scene
+        assert n_agent == 1, "Only one ego agent supported"
+
+        # ! prepare avails
+        # [n_scene, n_agent, n_step_future]
+        avails = gt_valid
+        # [n_decoder, n_scene, n_agent, n_step_future]
+        avails = avails.unsqueeze(0).expand(n_decoder, -1, -1, -1)
+        if n_decoder > 1:
+            # [n_decoder], randomly train ensembles with 50% of chance
+            mask_ensemble = torch.bernoulli(
+                0.5 * torch.ones_like(pred_conf[:, 0, 0, 0])
+            ).bool()
+            # make sure at least one ensemble is trained
+            if not mask_ensemble.any():
+                mask_ensemble[torch.randint(0, n_decoder, (1,))] |= True
+            avails = avails & mask_ensemble[:, None, None, None]
+        # [n_decoder, n_scene, n_agent, n_pred, n_step_future]
+        avails = avails.unsqueeze(3).expand(-1, -1, -1, n_pred, -1)
+
+        # ! loss for all modes simultaneously, since all ego predictions should be aligned with the goal
+        # Calculate loss for each decoder and scene separately, because the number of valid
+        # prediction points can differ between scenes.
+        for i in range(n_decoder):
+            for j in range(n_scene):
+                # (1 2)
+                gt_route_goal_scene = gt_route_goal[j]
+
+                # Find the last valid index along n_step_future
+                # Using torch.where to find valid indices, then taking the max index per [n_agent, n_pred]
+                last_valid_indices = torch.argmax(
+                    avails.int()[i, j].flip(dims=[-1]), dim=-1
+                )
+                last_valid_indices = (
+                    n_step_future - 1 - last_valid_indices
+                )  # Convert flipped indices to original indices
+
+                # Use the last valid indices to index into the data tensor
+                # Gather indices for advanced indexing
+                agent_indices = (
+                    torch.arange(n_agent).unsqueeze(1).expand(n_agent, n_pred)
+                )
+                pred_indices = torch.arange(n_pred).unsqueeze(0).expand(n_agent, n_pred)
+                final_pred_pos = pred_pos[
+                    i, j, agent_indices, pred_indices, last_valid_indices, :
+                ]
+
+                self.loss += self.mse_loss(
+                    final_pred_pos,
+                    gt_route_goal_scene.unsqueeze(1).expand(n_agent, n_pred, 2),
+                )
+
+    def compute(self) -> Dict[str, Tensor]:
+        # Compute the MSE loss across all samples
+        mse_loss = self.loss / (self.n_decoders * self.n_scene)
+
+        # Return the loss as a dictionary
+        out_dict = {f"{self.prefix}/loss": mse_loss}
         return out_dict
