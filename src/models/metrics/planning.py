@@ -21,9 +21,7 @@ class EgoPlanningMetrics(NllMetrics):
 
         self.route_loss = RouteLoss(prefix=self.ego_loss_prefix, **kwargs)
         self.goal_loss = GoalLoss(prefix=self.ego_loss_prefix, **kwargs)
-        self.gt_loss = NllMetrics(prefix=self.ego_loss_prefix, **kwargs)
 
-        self.add_state("ego_gt_loss", default=torch.tensor(0), dist_reduce_fx="sum")
         self.add_state("ego_route_loss", default=torch.tensor(0), dist_reduce_fx="sum")
         self.add_state("ego_goal_loss", default=torch.tensor(0), dist_reduce_fx="sum")
 
@@ -110,8 +108,6 @@ class EgoPlanningMetrics(NllMetrics):
         )
 
         # ! loss
-        ego_nll_dict = self.gt_loss.forward(**ego_batch)
-        self.ego_gt_loss = ego_nll_dict[f"{self.ego_loss_prefix}/loss"]
         if self.nav_with_route:
             ego_route_loss_dict = self.route_loss.forward(**ego_batch)
             self.ego_route_loss = ego_route_loss_dict[f"{self.ego_loss_prefix}/loss"]
@@ -124,7 +120,6 @@ class EgoPlanningMetrics(NllMetrics):
 
         self.planning_metrics(**kwargs)
 
-        loss_dict[f"{self.ego_loss_prefix}/gt_loss"] = self.ego_gt_loss
         if self.nav_with_route:
             loss_dict[f"{self.ego_loss_prefix}/route_loss"] = self.ego_route_loss
             ego_nav_loss = self.ego_route_loss
@@ -132,7 +127,7 @@ class EgoPlanningMetrics(NllMetrics):
             loss_dict[f"{self.ego_loss_prefix}/goal_loss"] = self.ego_goal_loss
             ego_nav_loss = self.ego_goal_loss
 
-        ego_planning_loss = self.ego_gt_loss + ego_nav_loss / ego_nav_loss.detach()
+        ego_planning_loss = ego_nav_loss / ego_nav_loss.detach()
         loss_dict[f"{self.ego_loss_prefix}/loss"] = ego_planning_loss
         return loss_dict
 
