@@ -43,6 +43,9 @@ class EgoPlanningMetrics(NllMetrics):
         gt_route_pos: Tensor,
         gt_route_goal: Tensor,
         gt_route_goal_valid: Tensor,
+        gt_map_on_route: Tensor,
+        gt_map_valid: Tensor,
+        gt_map_pos: Tensor,
         **kwargs,
     ) -> None:
         """
@@ -106,6 +109,16 @@ class EgoPlanningMetrics(NllMetrics):
         ego_batch["gt_route_goal_valid"] = gt_route_goal_valid[ego_mask[0]].view(
             n_scene, 1, 1
         )
+        # [n_scene, n_target, n_map, 3] -> [n_scene, n_map, 3]
+        ego_batch["gt_map_on_route"] = gt_map_on_route[ego_mask[0]].view(n_scene, -1, 3)
+        # [n_scene, n_target, n_map, n_pl_node] -> [n_scene, n_map, n_pl_node]
+        ego_batch["gt_map_valid"] = gt_map_valid[ego_mask[0]].view(
+            n_scene, -1, n_pl_node
+        )
+        # [n_scene, n_target, n_map, n_pl_node, 2] -> [n_scene, n_map, n_pl_node, 2]
+        ego_batch["gt_map_pos"] = gt_map_pos[ego_mask[0]].view(
+            n_scene, -1, n_pl_node, 2
+        )
 
         # ! loss
         if self.nav_with_route:
@@ -147,6 +160,9 @@ class RouteLoss(Metric):
         gt_valid: Tensor,
         gt_route_valid: Tensor,
         gt_route_pos: Tensor,
+        gt_map_valid: Tensor,
+        gt_map_pos: Tensor,
+        gt_map_on_route: Tensor,
         **kwargs,
     ) -> None:
         n_decoder, n_scene, n_agent, n_pred, n_step_future, _ = pred_pos.shape
@@ -173,25 +189,78 @@ class RouteLoss(Metric):
         # ! loss for all modes simultaneously, since all ego predictions should be on-route
         # Calculate loss for each decoder and scene separately, because the number of valid
         # route and prediction points can differ between scenes.
+
+        # Chamfer loss
+        # for i in range(n_decoder):
+        #     for j in range(n_scene):
+        #         # ((n_agent n_route n_pl_node_modified) 2)
+        #         gt_route_pos_i_j = gt_route_pos[j][gt_route_valid[j]].unsqueeze(0)
+        #         # ((n_agent n_pred n_step_future_modified) 2)
+        #         pred_pos_i_j = pred_pos[i, j][avails[i, j]].unsqueeze(0)
+
+        #         # Compute Chamfer distance between the batch of predicted positions and route positions
+        #         chamfer_loss, _ = chamfer_distance(
+        #             pred_pos_i_j, gt_route_pos_i_j, single_directional=True
+        #         )
+        #         self.loss += chamfer_loss
+
+        n_map, n_pl_node = gt_map_valid.shape[-2:]
+        # [n_scene, n_map, 3] -> [n_scene, n_map, n_pl_node]
+        map_on_route_mask = (
+            (gt_map_on_route[..., 0] == 1).unsqueeze(-1).expand(-1, -1, n_pl_node)
+        )
+        map_on_route_and_valid = gt_map_valid & map_on_route_mask
+        agent_indices = torch.arange(n_agent).unsqueeze(1).expand(n_agent, n_pred)
+        pred_indices = torch.arange(n_pred).unsqueeze(0).expand(n_agent, n_pred)
+        distance_to_route = 0
         for i in range(n_decoder):
             for j in range(n_scene):
-                # ((n_agent n_route n_pl_node_modified) 2)
-                gt_route_pos_i_j = gt_route_pos[j][gt_route_valid[j]].unsqueeze(0)
-                # ((n_agent n_pred n_step_future_modified) 2)
-                pred_pos_i_j = pred_pos[i, j][avails[i, j]].unsqueeze(0)
-
-                # Compute Chamfer distance between the batch of predicted positions and route positions
-                chamfer_loss, _ = chamfer_distance(
-                    pred_pos_i_j, gt_route_pos_i_j, single_directional=True
+                if map_on_route_and_valid[j].sum() == 0:
+                    return
+                # Find the last valid index along n_step_future
+                # Using torch.where to find valid indices, then taking the max index per [n_agent, n_pred]
+                last_valid_indices = torch.argmax(
+                    avails.int()[i, j].flip(dims=[-1]), dim=-1
                 )
-                self.loss += chamfer_loss
+                last_valid_indices = (
+                    n_step_future - 1 - last_valid_indices
+                )  # Convert flipped indices to original indices
+
+                final_pred_pos = pred_pos[
+                    i, j, agent_indices, pred_indices, last_valid_indices, :
+                ].squeeze(0)
+
+                for pos in final_pred_pos:
+                    relevant_points_on_route = find_nearest_polyline_point(
+                        gt_map_pos[j], map_on_route_and_valid[j], pos
+                    )
+                    nearest_point = relevant_points_on_route["nearest_point"]
+                    nearest_point_predecessor = relevant_points_on_route["predecessor"]
+                    nearest_point_successor = relevant_points_on_route["successor"]
+                    if (
+                        nearest_point_predecessor is None
+                        and nearest_point_successor is None
+                    ):
+                        # TODO: not sure about this
+                        print("Only one point in nearest polyline")
+                        distance_to_route += torch.sqrt(
+                            torch.sum((pos - nearest_point) ** 2)
+                        )
+                    elif nearest_point_predecessor is None:
+                        nearest_point_predecessor = nearest_point
+                    elif nearest_point_successor is None:
+                        nearest_point_successor = nearest_point
+                    distance_to_route += normal_distance_to_line(
+                        pos, nearest_point_predecessor, nearest_point_successor
+                    )
+        self.loss = distance_to_route
 
     def compute(self) -> Dict[str, Tensor]:
         # Compute the average Chamfer loss across all samples
-        avg_chamfer_loss = self.loss / (self.n_decoders * self.n_scene)
+        route_loss = self.loss / (self.n_decoders * self.n_scene)
 
         # Return the loss as a dictionary
-        out_dict = {f"{self.prefix}/loss": avg_chamfer_loss}
+        out_dict = {f"{self.prefix}/loss": route_loss}
         return out_dict
 
 
@@ -273,3 +342,94 @@ class GoalLoss(Metric):
         # Return the loss as a dictionary
         out_dict = {f"{self.prefix}/loss": mse_loss}
         return out_dict
+
+
+def find_nearest_polyline_point(polylines, mask, target_point):
+    """
+    Find the polyline with the most points closest to a given target point.
+
+    :param polylines: (n_pl, n_points, 2) array of polylines (x, y coordinates)
+    :param mask: (n_pl, n_points) array indicating valid points (1 for valid, 0 for invalid)
+    :param target_point: A tuple (x, y) representing the target point
+
+    :return: the result dict
+    """
+    result = {
+        "nearest_point": None,
+        "predecessor": None,
+        "successor": None,
+    }
+
+    # Calculate Euclidean distance function
+    def euclidean_distance(p1, p2):
+        return torch.sqrt(torch.sum((p1 - p2) ** 2, dim=-1))
+
+    # Iterate over each polyline
+    best_point_idx = -1
+    best_pl_idx = -1
+    min_distance = float("inf")
+    num_points = -1
+
+    for i, polyline in enumerate(polylines):
+        # Get the valid points (where mask is 1)
+        valid_points = polyline[mask[i] == 1]
+        if valid_points.size(0) == 0:
+            continue
+
+        # Calculate distances from all valid points to the target point
+        distances = euclidean_distance(valid_points, target_point)
+
+        # Find the index of the point with the smallest distance
+        min_dist, min_idx = torch.min(distances, dim=0)
+
+        # Update the best polyline if this one has a closer point
+        if min_dist < min_distance:
+            min_distance = min_dist
+            best_pl_idx = i
+            best_point_idx = min_idx.item()
+            num_points = valid_points.size(0)
+
+    result["nearest_point"] = polylines[best_pl_idx][mask[best_pl_idx] == 1][
+        best_point_idx
+    ]
+    result["predecessor"] = (
+        polylines[best_pl_idx][mask[best_pl_idx] == 1][best_point_idx - 1]
+        if best_point_idx > 0
+        else None
+    )
+    result["successor"] = (
+        polylines[best_pl_idx][mask[best_pl_idx] == 1][best_point_idx + 1]
+        if best_point_idx < num_points - 1
+        else None
+    )
+
+    return result
+
+
+def normal_distance_to_line(predicted_point, line_start, line_end):
+    """
+    Compute the normal (perpendicular) distance from a predicted point to a line defined by two points.
+
+    :param predicted_point: (2,) tensor representing the (x, y) coordinates of the predicted point.
+    :param line_start: (2,) tensor representing the (x, y) coordinates of the first point of the line.
+    :param line_end: (2,) tensor representing the (x, y) coordinates of the second point of the line.
+
+    :return: A scalar tensor representing the normal distance.
+    """
+    # Extract coordinates
+    x, y = predicted_point[0], predicted_point[1]
+    x1, y1 = line_start[0], line_start[1]
+    x2, y2 = line_end[0], line_end[1]
+
+    # Compute numerator (absolute area formula)
+    numerator = torch.abs((y2 - y1) * x - (x2 - x1) * y + x2 * y1 - y2 * x1)
+
+    # Compute denominator (line length)
+    denominator = (
+        torch.sqrt((y2 - y1) ** 2 + (x2 - x1) ** 2) + 1e-8
+    )  # Add small epsilon to prevent division by zero
+
+    # Compute distance
+    distance = numerator / denominator
+
+    return distance
