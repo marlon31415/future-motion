@@ -306,6 +306,7 @@ class GoalLoss(Metric):
         # ! loss for all modes simultaneously, since all ego predictions should be aligned with the goal
         # Calculate loss for each decoder and scene separately, because the number of valid
         # prediction points can differ between scenes.
+        goal_mse = 0
         for i in range(n_decoder):
             for j in range(n_scene):
                 # (1 2)
@@ -330,10 +331,11 @@ class GoalLoss(Metric):
                     i, j, agent_indices, pred_indices, last_valid_indices, :
                 ]
 
-                self.loss += self.mse_loss(
+                goal_mse += self.mse_loss(
                     final_pred_pos,
                     gt_route_goal_scene.unsqueeze(1).expand(n_agent, n_pred, 2),
                 )
+        self.loss = goal_mse
 
     def compute(self) -> Dict[str, Tensor]:
         # Compute the MSE loss across all samples
