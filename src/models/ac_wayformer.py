@@ -340,8 +340,8 @@ class InputRouteProjections(nn.Module):
         Returns:
             route_emb: [n_batch, n_route or n_route * n_pl_node, hidden_dim]
             route_valid: [n_batch, n_route or n_route * n_pl_node]
-            route_goal_emb: [n_batch, n_target, hidden_dim]
-            route_goal_valid: [n_batch, n_target]
+            route_goal_emb: [n_batch, 1, hidden_dim]
+            route_goal_valid: [n_batch, 1]
         """     
         # [n_batch, n_route, (n_pl_node), route_attr_dim]
         route_valid = route_valid.flatten(0, 1)
@@ -357,7 +357,7 @@ class InputRouteProjections(nn.Module):
             route_emb = route_emb.flatten(1, 2)  # [n_batch, n_map * n_pl_node, :]
             route_valid = route_valid.flatten(1, 2)  # [n_batch, n_map * n_pl_node]
 
-        return route_emb, route_valid, route_goal_emb, route_goal_valid
+        return route_emb, route_valid, route_goal_emb.unsqueeze(1), route_goal_valid.unsqueeze(1)
 
 
 class EarlyFusionEncoder(nn.Module):

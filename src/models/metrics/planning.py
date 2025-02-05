@@ -12,9 +12,10 @@ class EgoPlanningMetrics(NllMetrics):
     This Loss build upon the NllMetrics class and extends it with additional metrics for ego planning.
     """
 
-    def __init__(self, nav_with_route, *args, **kwargs) -> None:
+    def __init__(self, nav_with_route, nav_with_goal, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.nav_with_route = nav_with_route
+        self.nav_with_goal = False  # nav_with_goal
 
         self.ego_loss_prefix = f"{self.prefix}/ego"
         del kwargs["prefix"]
@@ -124,7 +125,7 @@ class EgoPlanningMetrics(NllMetrics):
         if self.nav_with_route:
             ego_route_loss_dict = self.route_loss.forward(**ego_batch)
             self.ego_route_loss = ego_route_loss_dict[f"{self.ego_loss_prefix}/loss"]
-        else:
+        if self.nav_with_goal:
             ego_goal_loss_dict = self.goal_loss.forward(**ego_batch)
             self.ego_goal_loss = ego_goal_loss_dict[f"{self.ego_loss_prefix}/loss"]
 
@@ -133,14 +134,15 @@ class EgoPlanningMetrics(NllMetrics):
 
         self.planning_metrics(**kwargs)
 
+        ego_nav_loss = 0
         if self.nav_with_route:
             loss_dict[f"{self.ego_loss_prefix}/route_loss"] = self.ego_route_loss
-            ego_nav_loss = self.ego_route_loss
-        else:
+            ego_nav_loss += self.ego_route_loss
+        if self.nav_with_goal:
             loss_dict[f"{self.ego_loss_prefix}/goal_loss"] = self.ego_goal_loss
-            ego_nav_loss = self.ego_goal_loss
+            ego_nav_loss += self.ego_goal_loss
 
-        ego_planning_loss = ego_nav_loss / ego_nav_loss.detach()
+        ego_planning_loss = ego_nav_loss  # / ego_nav_loss.detach()
         loss_dict[f"{self.ego_loss_prefix}/loss"] = ego_planning_loss
         return loss_dict
 

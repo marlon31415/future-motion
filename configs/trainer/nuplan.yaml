@@ -23,4 +23,4 @@ enable_progress_bar: True
 
 num_nodes: 1
 accelerator: "gpu"
-devices: [4,5,6,8]
+devices: null

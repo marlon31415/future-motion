@@ -31,7 +31,9 @@ class SceneMotion(nn.Module):
         n_decoders: int,
         use_ego_nav: bool,
         nav_with_route: bool,
-        nav_early_fusion: bool,
+        nav_with_goal: bool,
+        nav_route_late_fusion: bool,
+        nav_goal_late_fusion: bool,
         tf_cfg: DictConfig,
         local_encoder: DictConfig,
         local_route_encoder: DictConfig,
@@ -49,7 +51,9 @@ class SceneMotion(nn.Module):
         self.pred_subsampling_rate = kwargs.get("pred_subsampling_rate", 1)
         self.use_ego_nav = use_ego_nav
         self.nav_with_route = nav_with_route
-        self.nav_early_fusion = nav_early_fusion
+        self.nav_with_goal = nav_with_goal
+        self.nav_route_late_fusion = nav_route_late_fusion
+        self.nav_goal_late_fusion = nav_goal_late_fusion
         motion_decoder["mlp_head"]["n_step_future"] = motion_decoder["mlp_head"]["n_step_future"] // self.pred_subsampling_rate
 
         self.local_encoder = InputProjections(
@@ -180,6 +184,9 @@ class SceneMotion(nn.Module):
                 tl_attr=tl_attr,
             )
 
+            emb = torch.cat([target_emb, other_emb, tl_emb, map_emb], dim=1)
+            emb_invalid = ~torch.cat([target_valid, other_valid, tl_valid, map_valid], dim=1)
+
             if self.use_ego_nav:
                 route_emb, route_valid, route_goal_emb, route_goal_valid = self.local_route_encoder(
                     route_valid=route_valid,
@@ -187,23 +194,10 @@ class SceneMotion(nn.Module):
                     route_goal_valid=route_goal_valid,
                     route_goal_attr=route_goal_attr,
                 )
-                if self.nav_with_route:
-                    route_emb = route_emb
-                    route_valid = route_valid
-                    route_invalid = ~route_valid
-                    if not self.nav_early_fusion:
-                        route_emb = self.route_reduction_decoder(emb=route_emb, emb_invalid=route_invalid, valid=valid)
-                else:
-                    route_emb = route_goal_emb.unsqueeze(1)
-                    route_valid = route_goal_valid.unsqueeze(1)
+                if self.nav_with_goal and not self.nav_goal_late_fusion:
+                    emb = torch.cat([emb, route_goal_emb], dim=1)
+                    emb_invalid = torch.cat([emb_invalid, ~route_goal_valid], dim=1)
 
-            if self.use_ego_nav and self.nav_early_fusion:
-                emb = torch.cat([target_emb, other_emb, tl_emb, map_emb, route_emb], dim=1)
-                emb_invalid = ~torch.cat([target_valid, other_valid, tl_valid, map_valid, route_valid], dim=1)
-            else:
-                emb = torch.cat([target_emb, other_emb, tl_emb, map_emb], dim=1)
-                emb_invalid = ~torch.cat([target_valid, other_valid, tl_valid, map_valid], dim=1)
-            
             # Reduction decoder
             red_emb = self.reduction_decoder(emb=emb, emb_invalid=emb_invalid, valid=valid)
 
@@ -213,10 +207,13 @@ class SceneMotion(nn.Module):
             ref_rot_emb = self.to_ref_rot_emb(kwargs["ref_rot"].flatten(0, 1).flatten(1, 2))
             
             # Concat & rearrange to learn scene-wide context: n_batch = n_scene (not n_scene * n_agent)
-            if self.use_ego_nav and not self.nav_early_fusion:
-                red_emb = torch.cat([red_emb, route_emb, ref_pos_emb[:, None, :], ref_rot_emb[:, None, :]], dim=1)
-            else:
-                red_emb = torch.cat([red_emb, ref_pos_emb[:, None, :], ref_rot_emb[:, None, :]], dim=1)
+            red_emb = torch.cat([red_emb, ref_pos_emb[:, None, :], ref_rot_emb[:, None, :]], dim=1)
+            if self.use_ego_nav:
+                if self.nav_with_route and self.nav_route_late_fusion:
+                    route_red_emb = self.route_reduction_decoder(emb=route_emb, emb_invalid=~route_valid, valid=valid)
+                    red_emb = torch.cat([red_emb, route_red_emb], dim=1)
+                if self.nav_with_goal and self.nav_goal_late_fusion:
+                    red_emb = torch.cat([red_emb, route_goal_emb], dim=1)
             n_scene, n_agent = valid.shape
             scene_emb = rearrange(red_emb, "(n_scene n_agent) n_token ... -> n_scene (n_agent n_token) ...", n_scene=n_scene, n_agent=n_agent, n_token=red_emb.shape[1])
             scene_emb_invalid = torch.zeros(scene_emb.shape[0], scene_emb.shape[1], device=scene_emb.device, dtype=torch.bool)
